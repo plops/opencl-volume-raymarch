@@ -104,7 +104,30 @@ int main()
 
   while(running){
     glClear(GL_COLOR_BUFFER_BIT);
+
+    unsigned int tex;
+    unsigned char tex_buf[512*512];
+    glGenTextures(1,&tex);
+    glBindTexture(GL_TEXTURE_2D,tex);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+    glEnable(GL_TEXTURE_2D);
     
+    glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE,
+		 512,512,0,
+		 GL_LUMINANCE,
+		 GL_UNSIGNED_BYTE,
+		 tex_buf);
+    
+    glBegin(GL_TRIANGLE_FAN);
+    glTexCoord2f(0,0);    glVertex2f(-1,-1);
+    glTexCoord2f(0,1);    glVertex2f(-1,1);
+    glTexCoord2f(1,1);    glVertex2f(1,1);
+    glTexCoord2f(1,0);    glVertex2f(1,-1);
+    glEnd();
+
+    glDeleteTextures(1,&tex);
+
     glfwSwapBuffers();
   }
 
