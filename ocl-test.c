@@ -68,7 +68,15 @@ int main()
   
   cl_device_id d;
   clGetDeviceIDs(p[0],CL_DEVICE_TYPE_GPU,1,&d,NULL);
-  
+ 
+   {
+    char buf[1024];
+    size_t n=sizeof(buf);
+    clGetDeviceInfo(d,CL_DEVICE_EXTENSIONS,n,buf,&n);
+    printf("%s\n",buf);
+  }
+ 
+ 
   cl_context ctx=clCreateContext(0,1,&d,NULL,NULL,NULL);
   cl_command_queue q=clCreateCommandQueue(ctx,d,0,NULL);
   cl_program prog=clCreateProgramWithSource(ctx,1,&source,0,0);
@@ -119,12 +127,12 @@ int main()
 		 tex_buf);
     { cl_int err;
       cl_mem bla=
-      clCreateFromGLTexture2D(ctx      /* context */,
-			      CL_MEM_READ_ONLY    /* flags */,
-			      CL_GL_OBJECT_TEXTURE2D       /* target */,
-			      0        /* miplevel */,
-			      tex       /* texture */,
-			      &err        /* errcode_ret */);
+	clCreateFromGLTexture2D(ctx      /* context */,
+				CL_MEM_READ_ONLY    /* flags */,
+				CL_GL_OBJECT_TEXTURE2D       /* target */,
+				0        /* miplevel */,
+				tex       /* texture */,
+				&err        /* errcode_ret */);
       printf("create-from-gl-tex %d\n",err); // -30 = invalid value
     }
 
