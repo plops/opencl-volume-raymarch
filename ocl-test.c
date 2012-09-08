@@ -120,11 +120,6 @@ int main()
   clSetKernelArg(k,1,sizeof(cl_mem),&db);
   clSetKernelArg(k,2,sizeof(cl_mem),&dc);
 
-  {
-    size_t d=DIMS;
-    clEnqueueNDRangeKernel(q,k,1,0,&d,0,0,0,0);
-  }
-
   while(running){
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -151,11 +146,33 @@ int main()
 				0        /* miplevel */,
 				tex       /* texture */,
 				&err        /* errcode_ret */);
-      printf("create-from-gl-tex %d\n",err);
+      if(err!=CL_SUCCESS)
+	printf("create-from-gl-tex %d\n",err);
       // -30 = invalid value
       // -34 invalid context
-    }
+     
+      glFinish(); // ensure memory is up-to-date, glFlush might be faster
+      
+      err = clEnqueueAcquireGLObjects(q,1,&img,0,0,0);
+      if(err!=CL_SUCCESS)
+	printf("acquire %d\n",err);
 
+      err = clEnqueueReleaseGLObjects(q,1,&img,0,0,0);
+      if(err!=CL_SUCCESS)
+	printf("release %d\n",err);
+
+      
+      {
+	size_t d=DIMS;
+	clEnqueueNDRangeKernel(q,k,1,0,&d,0,0,0,0);
+      }
+
+      err = clFlush(q);
+      if(err!=CL_SUCCESS)
+	printf("flush %d\n",err);
+      
+    }
+    
     
     glBegin(GL_TRIANGLE_FAN);
     glTexCoord2f(0,0);    glVertex2f(-1,-1);
