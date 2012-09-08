@@ -53,8 +53,6 @@ int main()
   //glfwSetWindowPos(-8,-31);
   glfwSwapInterval(1);
   glfwSetKeyCallback(keyhandler);
-  
-
 
   cl_uint n;
   clGetPlatformIDs(0,NULL,&n);
@@ -112,12 +110,24 @@ int main()
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
     glEnable(GL_TEXTURE_2D);
-    
+
+
     glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE,
 		 512,512,0,
 		 GL_LUMINANCE,
 		 GL_UNSIGNED_BYTE,
 		 tex_buf);
+    { cl_int err;
+      cl_mem bla=
+      clCreateFromGLTexture2D(ctx      /* context */,
+			      CL_MEM_READ_ONLY    /* flags */,
+			      CL_GL_OBJECT_TEXTURE2D       /* target */,
+			      0        /* miplevel */,
+			      tex       /* texture */,
+			      &err        /* errcode_ret */);
+      printf("create-from-gl-tex %d\n",err); // -30 = invalid value
+    }
+
     
     glBegin(GL_TRIANGLE_FAN);
     glTexCoord2f(0,0);    glVertex2f(-1,-1);
@@ -130,7 +140,6 @@ int main()
 
     glfwSwapBuffers();
   }
-
 
   clEnqueueReadBuffer(q,dc,CL_TRUE,0,
 		      DIMS*sizeof(cl_float),pc,0,0,0);
