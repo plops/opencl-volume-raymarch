@@ -1,8 +1,9 @@
 #include <CL/opencl.h>
+#include <CL/cl_gl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <GL/glfw.h>
-
+#include <GL/glx.h>
 
 const char *source = 
   "  __kernel void\
@@ -69,15 +70,31 @@ int main()
   cl_device_id d;
   clGetDeviceIDs(p[0],CL_DEVICE_TYPE_GPU,1,&d,NULL);
  
-   {
+  { // print extension string
     char buf[1024];
     size_t n=sizeof(buf);
     clGetDeviceInfo(d,CL_DEVICE_EXTENSIONS,n,buf,&n);
     printf("%s\n",buf);
   }
  
- 
-  cl_context ctx=clCreateContext(0,1,&d,NULL,NULL,NULL);
+  cl_context ctx; //=clCreateContext(0,1,&d,NULL,NULL,NULL);
+
+  { // create shared GLX CL context
+    cl_context_properties properties[]={
+      CL_GL_CONTEXT_KHR, (cl_context_properties)glXGetCurrentContext(),
+      CL_GLX_DISPLAY_KHR, (cl_context_properties)glXGetCurrentDisplay(),
+      CL_CONTEXT_PLATFORM, (cl_context_properties)p[0],0
+    };
+    cl_device_id devices[32];
+    size_t size;
+    clGetGLContextInfoKHR_fn clGetGLContextInfoKHR=
+      clGetExtensionFunctionAddress("clGetGLContextInfoKHR");
+    clGetGLContextInfoKHR(properties,CL_DEVICES_FOR_GL_CONTEXT_KHR,
+			  sizeof(devices),devices,&size);
+    int count = size / sizeof(cl_device_id);
+    ctx = clCreateContext(properties,count,devices,NULL,NULL,NULL);
+  }
+  
   cl_command_queue q=clCreateCommandQueue(ctx,d,0,NULL);
   cl_program prog=clCreateProgramWithSource(ctx,1,&source,0,0);
   clBuildProgram(prog,0,0,0,0,0);
@@ -125,15 +142,18 @@ int main()
 		 GL_LUMINANCE,
 		 GL_UNSIGNED_BYTE,
 		 tex_buf);
+    glBindTexture(GL_TEXTURE_2D,tex);
     { cl_int err;
-      cl_mem bla=
+      cl_mem img=
 	clCreateFromGLTexture2D(ctx      /* context */,
-				CL_MEM_READ_ONLY    /* flags */,
-				CL_GL_OBJECT_TEXTURE2D       /* target */,
+				CL_MEM_READ_WRITE    /* flags */,
+				GL_TEXTURE_2D       /* target */,
 				0        /* miplevel */,
 				tex       /* texture */,
 				&err        /* errcode_ret */);
-      printf("create-from-gl-tex %d\n",err); // -30 = invalid value
+      printf("create-from-gl-tex %d\n",err);
+      // -30 = invalid value
+      // -34 invalid context
     }
 
     
