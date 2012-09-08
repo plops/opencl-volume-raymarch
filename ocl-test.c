@@ -1,6 +1,8 @@
 #include <CL/opencl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <GL/glfw.h>
+
 
 const char *source = 
   "  __kernel void\
@@ -19,8 +21,41 @@ void randomInit(float*a,int n)
     a[i]=drand48();
 }
 
+
+int running = GL_TRUE;
+
+void GLFWCALL
+keyhandler(int key,int action)
+{
+  if(action!=GLFW_PRESS)
+    return;
+  if(key==GLFW_KEY_ESC)
+    running=GL_FALSE;
+  return;
+}
+
 int main()
 {
+
+  if(!glfwInit())
+    exit(EXIT_FAILURE);
+  int width=512,height=512;
+  
+  if(!glfwOpenWindow(width,height,8,8,8,
+		     0,0,0,
+		     GLFW_WINDOW
+		     )){
+    glfwTerminate();
+    return -1;
+  }
+  
+  glfwSetWindowTitle("bla");
+  //glfwSetWindowPos(-8,-31);
+  glfwSwapInterval(1);
+  glfwSetKeyCallback(keyhandler);
+  
+
+
   cl_uint n;
   clGetPlatformIDs(0,NULL,&n);
   
@@ -66,6 +101,14 @@ int main()
     size_t d=DIMS;
     clEnqueueNDRangeKernel(q,k,1,0,&d,0,0,0,0);
   }
+
+  while(running){
+    glClear(GL_COLOR_BUFFER_BIT);
+    
+    glfwSwapBuffers();
+  }
+
+
   clEnqueueReadBuffer(q,dc,CL_TRUE,0,
 		      DIMS*sizeof(cl_float),pc,0,0,0);
 
@@ -76,5 +119,9 @@ int main()
   clReleaseMemObject(dc);
   clReleaseCommandQueue(q);
   clReleaseContext(ctx);
+
+  glfwCloseWindow();
+  glfwTerminate();
+  
   return 0;
 }
