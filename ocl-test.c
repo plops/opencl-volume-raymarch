@@ -13,6 +13,7 @@
 
 const char *source = 
   "\
+enum{N=100};								\
 const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE|			\
                           CLK_ADDRESS_CLAMP_TO_EDGE|			\
                           CLK_FILTER_LINEAR;				\
@@ -20,27 +21,16 @@ __kernel void red(int n, __write_only image2d_t rgba,                   \
                   __read_only image3d_t vol)				\
 {                                                                       \
   int x=get_global_id(0), y=get_global_id(1);				\
-  float4 start=(float4)(x,y,0,0),delta=(float4)(0,0,1,0),val=0.0;	\
-  int z=0;								\
-  for(z=0;z<128;z++)							\
-    val+=read_imagef(vol,sampler,start+z*delta);			\
-  val /= 100;								\
-  write_imagef(rgba,(int2)(x,y),val.xxxx);				\
+  float4								\
+    start=(float4)(x,y,0,0),						\
+    target=(float4)(64,64,64,0),					\
+    delta=normalize(target-start),					\
+    val=0.0;								\
+  int i=0;								\
+  for(i=-N;i<N;i++)							\
+    val+=read_imagef(vol,sampler,start+i*2*delta);			\
+  write_imagef(rgba,(int2)(x,y),val.xxxx/10);				\
 }";
-
-/*
-read_imageui(vol,sampler,coords);				\
-
-
-float xx=x/1360.-.5, yy=y/1360.-.5,r=sqrt(xx*xx+yy*yy);		\
-float xx2=xx-.05,yy2=yy+.1,r2=sqrt(xx2*xx2+yy2*yy2);			\
-float v = sin(931*r*r-.035*n);					\
-float w = sin(631*r2*r2-.035*n);					\
-float z=w*v;								\
-z = (z<0)?-1:1;							\
-float4 col = (z<0)? (float4)(-z,.2*-z,0,1.0f): (float4)(0,.2*z,z,1.0f); \
-
-*/
 
 void randomInit(float*a,int n)
 {
@@ -147,17 +137,27 @@ int main()
 
   unsigned int vtex;
   float *vtex_buf = malloc(VW*VH*VD*sizeof(float));
-  { int i,j,k;
+  
+  { unsigned int i,j,k,e;
+    const float off[]={.23,.23,.12,
+		       .1,.2,.5,
+		       .5,.6,.7,
+                       .2,.2,.4,
+		       .4,.2,.7,
+                       .1,.3,.9,
+		       .5,.6,.7,
+                       .5,.76,.6};
     for(k=0;k<VD;k++)
       for(j=0;j<VH;j++)
-	for(i=0;i<VW;i++){
-	  float 
-	    x=(1.*i)/VW-.5,
-	    y=(1.*j)/VH-.5,
-	    z=(1.*k)/VD-.5,
-	    r2=x*x+y*y+z*z;
-	  vtex_buf[i+VW*(j+VH*k)]=(r2<.4*.4)?1.0:0.0;
-	}
+	for(i=0;i<VW;i++)
+	  for(e=0;e<len(off)/3;e++){
+	    float 
+	      x=(1.*i)/VW-off[3*e+0],
+	      y=(1.*j)/VH-off[3*e+1],
+	      z=(1.*k)/VD-off[3*e+2],
+	      r2=x*x+y*y+z*z;
+	    vtex_buf[i+VW*(j+VH*k)]+=(r2<.03*.03)?1.0:0.0;
+	  }
   }
   glGenTextures(1,&vtex);
   glBindTexture(GL_TEXTURE_3D,vtex);
