@@ -174,6 +174,19 @@ int main()
   suseconds_t old_usec=0;
   time_t old_sec=0;
 
+  uint l=glGenLists(1);
+  glNewList(l,GL_COMPILE);
+  
+  glBegin(GL_TRIANGLE_FAN);
+  { float a=-1.,b=1.;
+    glTexCoord2f(0,0);    glVertex2f(a,a);
+    glTexCoord2f(0,1);    glVertex2f(a,b);
+    glTexCoord2f(1,1);    glVertex2f(b,b);
+    glTexCoord2f(1,0);    glVertex2f(b,a);
+  }
+  glEnd();
+  glEndList();
+  
   while(running){
     
     gettimeofday(&tv,0);
@@ -182,7 +195,7 @@ int main()
       float dt = (tv.tv_usec/1000.-old_usec/1000.)+(tv.tv_sec/1000.-old_sec/1000.);
       printf("frame-count=%d sec=%lu usec=%lu dt_ms=%3.3g, rate_hz=%8.9g\n",
 	     frame_count,tv.tv_sec,tv.tv_usec,
-	     dt,1000*frames/dt);
+	     dt,1000/dt);
     }
     { 
       //glFinish(); // ensure memory is up-to-date, glFlush might be faster
@@ -217,15 +230,7 @@ int main()
       
     }
     glClear(GL_COLOR_BUFFER_BIT);
-    
-    glBegin(GL_TRIANGLE_FAN);
-    { float a=-1.,b=1.;
-      glTexCoord2f(0,0);    glVertex2f(a,a);
-      glTexCoord2f(0,1);    glVertex2f(a,b);
-      glTexCoord2f(1,1);    glVertex2f(b,b);
-      glTexCoord2f(1,0);    glVertex2f(b,a);
-    }
-    glEnd();
+    glCallList(l);
 
     //usleep(1000000/60);
 
