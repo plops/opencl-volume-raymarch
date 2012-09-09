@@ -5,6 +5,7 @@
 #include <GL/glfw.h>
 #include <GL/glx.h>
 #include <unistd.h>
+#include <sys/time.h>
 
 const char *source = 
   "  __kernel void \ 
@@ -12,12 +13,13 @@ const char *source =
 {									\
   int x=get_global_id(0),y=get_global_id(1);				\
   int2 coords = (int2)(x,y);						\
-  float xx=x/1366.-.5, yy=y/1366.-.5,r=sqrt(xx*xx+yy*yy);		\
-  float xx2=xx-.05,yy2=yy,r2=sqrt(xx2*xx2+yy2*yy2);			\
-  float v = sin(1031*r-.35*n);						\
-  float w = sin(1031*r2-.35*n);				\
-  float z=v*w;						\
-  float4 col = (z<0)? (float4)(-z,0,0,1.0f): (float4)(0,0,z,1.0f);	\
+  float xx=x/1360.-.5, yy=y/1360.-.5,r=sqrt(xx*xx+yy*yy);		\
+  float xx2=xx-.05,yy2=yy+.1,r2=sqrt(xx2*xx2+yy2*yy2);			\
+  float v = sin(931*r*r-.035*n);						\
+  float w = sin(631*r2*r2-.035*n);					\
+  float z=w*v;								\
+  z = (z<0)?-1:1;\
+  float4 col = (z<0)? (float4)(-z,.2*-z,0,1.0f): (float4)(0,.2*z,z,1.0f);	\
   write_imagef(rgba,coords,col);	\
 }";
 
@@ -41,12 +43,14 @@ keyhandler(int key,int action)
   return;
 }
 
+enum { W = 1360, H=730};
+
 int main()
 {
 
   if(!glfwInit())
     exit(EXIT_FAILURE);
-  int width=1366,height=768;
+  int width=W,height=H;
   
   if(!glfwOpenWindow(width,height,8,8,8,
 		     0,0,0,
@@ -60,7 +64,7 @@ int main()
   glfwSetWindowTitle("bla");
 
   //glfwSetWindowPos(-8,-31);
-  glfwSwapInterval(1);
+  glfwSwapInterval(0);
   glfwSetKeyCallback(keyhandler);
 
   cl_uint n;
@@ -112,7 +116,7 @@ int main()
   }
   cl_kernel k=clCreateKernel(prog,"red",0);
   
-  enum {BLOCK_SIZE=1366, BLOCKS=768, DIMS=BLOCK_SIZE*BLOCKS};
+  enum {BLOCK_SIZE=W, BLOCKS=H, DIMS=BLOCK_SIZE*BLOCKS};
   
   /* float pa[DIMS], pb[DIMS], pc[DIMS]; */
   
@@ -132,14 +136,14 @@ int main()
   /* clSetKernelArg(k,2,sizeof(cl_mem),&dc); */
 
   unsigned int tex;
-  float *tex_buf = malloc(1366*768*4*sizeof(float));
+  float *tex_buf = malloc(W*H*4*sizeof(float));
   { int i,j;
-    for(i=0;i<1366;i++)
-      for(j=0;j<768;j++){
-	tex_buf[(i+1366*j)*4+0]=1.0;
-	tex_buf[(i+1366*j)*4+1]=0.0;
-	tex_buf[(i+1366*j)*4+2]=.5;
-	tex_buf[(i+1366*j)*4+0]=0.0;
+    for(i=0;i<W;i++)
+      for(j=0;j<H;j++){
+	tex_buf[(i+W*j)*4+0]=1.0;
+	tex_buf[(i+W*j)*4+1]=0.0;
+	tex_buf[(i+W*j)*4+2]=.5;
+	tex_buf[(i+W*j)*4+0]=0.0;
       }
   }
   glGenTextures(1,&tex);
@@ -148,7 +152,7 @@ int main()
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glEnable(GL_TEXTURE_2D);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,
-	       1366,768,0,GL_RGBA,GL_FLOAT,tex_buf);
+	       W,H,0,GL_RGBA,GL_FLOAT,tex_buf);
 
   cl_int err;
   cl_mem img=
@@ -164,14 +168,25 @@ int main()
   // -34 invalid context
      
 
-  int rot=1;
+  int frame_count= 1;
+
+  struct timeval tv;    
+  suseconds_t old_usec=0;
+  time_t old_sec=0;
+
   while(running){
     
-
-
+    gettimeofday(&tv,0);
+    int frames=100;
+    if(0==(frame_count%frames)){
+      float dt = (tv.tv_usec/1000.-old_usec/1000.)+(tv.tv_sec/1000.-old_sec/1000.);
+      printf("frame-count=%d sec=%lu usec=%lu dt_ms=%3.3g, rate_hz=%8.9g\n",
+	     frame_count,tv.tv_sec,tv.tv_usec,
+	     dt,1000*frames/dt);
+    }
     { 
-      glFinish(); // ensure memory is up-to-date, glFlush might be faster
-      
+      //glFinish(); // ensure memory is up-to-date, glFlush might be faster
+      glFlush();
       err = clEnqueueAcquireGLObjects(q,1,&img,0,0,0);
       if(err!=CL_SUCCESS)
 	printf("acquire %d\n",err);
@@ -180,12 +195,12 @@ int main()
       
       { // call cl kernel here 
 	
-	rot++;
-	if(CL_SUCCESS!=clSetKernelArg(k,0,sizeof(rot),&rot))
+	frame_count++;
+	if(CL_SUCCESS!=clSetKernelArg(k,0,sizeof(frame_count),&frame_count))
 	  printf("error set kernel arg\n"); 
 	if(CL_SUCCESS!=clSetKernelArg(k,1,sizeof(cl_mem),&img))
 	  printf("error set kernel arg\n"); 
-	const size_t d[]={1366,768};
+	const size_t d[]={W,H};
 	clEnqueueNDRangeKernel(q,k,sizeof(d)/sizeof(*d),0,
 			       d,0,0,0,0);
       }
@@ -215,6 +230,9 @@ int main()
     //usleep(1000000/60);
 
     glfwSwapBuffers();
+    old_usec=tv.tv_usec;
+    old_sec=tv.tv_sec;  
+
   }
 
   glDeleteTextures(1,&tex);
