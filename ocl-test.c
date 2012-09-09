@@ -1,3 +1,5 @@
+// VolumetricMethodsInVisualEffects2010
+
 #include <CL/opencl.h>
 #include <CL/cl_gl.h>
 #include <stdio.h>
