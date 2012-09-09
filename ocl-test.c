@@ -4,14 +4,15 @@
 #include <stdlib.h>
 #include <GL/glfw.h>
 #include <GL/glx.h>
+#include <unistd.h>
 
 const char *source = 
   "  __kernel void\
-  red(__write_only image2d_t rgba)\
+  red(int n, __write_only image2d_t rgba)\
 {\
   int x=get_global_id(0),y=get_global_id(1);\
   int2 coords = (int2)(x,y);\
-  write_imagef(rgba,coords,(float4)(1.0f,1.0f,1.0f,1.0f));\
+  write_imagef(rgba,coords,(float4)(sin((x+7*n)/23.0),sin(y/11.0f+n/3.),1.0f,1.0f));\
 }";
 
 void randomInit(float*a,int n)
@@ -140,7 +141,7 @@ int main()
   glEnable(GL_TEXTURE_2D);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,
 	       512,512,0,GL_RGBA,GL_FLOAT,tex_buf);
-  
+  int rot=1;
   while(running){
     glClear(GL_COLOR_BUFFER_BIT);
 
@@ -167,7 +168,11 @@ int main()
       
       
       { // call cl kernel here 
-	if(CL_SUCCESS!=clSetKernelArg(k,0,sizeof(cl_mem),&img))
+	
+	rot++;
+	if(CL_SUCCESS!=clSetKernelArg(k,0,sizeof(rot),&rot))
+	  printf("error set kernel arg\n"); 
+	if(CL_SUCCESS!=clSetKernelArg(k,1,sizeof(cl_mem),&img))
 	  printf("error set kernel arg\n"); 
 	const size_t d[]={512,512};
 	clEnqueueNDRangeKernel(q,k,sizeof(d)/sizeof(*d),0,
@@ -188,7 +193,7 @@ int main()
     
     
     glBegin(GL_TRIANGLE_FAN);
-    { float a=-.8,b=.8;
+    { float a=-1.,b=1.;
       glTexCoord2f(0,0);    glVertex2f(a,a);
       glTexCoord2f(0,1);    glVertex2f(a,b);
       glTexCoord2f(1,1);    glVertex2f(b,b);
@@ -196,6 +201,7 @@ int main()
     }
     glEnd();
 
+    usleep(1000000/60);
 
     glfwSwapBuffers();
   }
