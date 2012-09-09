@@ -12,8 +12,11 @@ const char *source =
 {									\
   int x=get_global_id(0),y=get_global_id(1);				\
   int2 coords = (int2)(x,y);						\
-  float v = .5*(sin((x+n+y)/100.0f)+1);			\
-  write_imagef(rgba,coords,(float4)(.4*(sin((x+7*n)/23.0)+1)*.5*(sin(y/11.0f+n/3.)+1),v,v,1.0f)); \
+  float xx=x/1366.-.5, yy=y/768.-.5,r=sqrt(xx*xx+yy*yy);			\
+  float xx2=xx-.05,yy2=yy,r2=sqrt(xx2*xx2+yy2*yy2);							\
+  float v = .5*(sin(831*r+.35*n)+1); \
+  float w = .5*(sin(831*r2+.32*n)+1); \
+  write_imagef(rgba,coords,(float4)(v*w,v*w,v*w,1.0f)); \
 }";
 
 void randomInit(float*a,int n)
