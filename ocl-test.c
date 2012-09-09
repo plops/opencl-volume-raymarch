@@ -29,7 +29,7 @@ __kernel void red(int n, __write_only image2d_t rgba,                   \
   int i=0;								\
   for(i=-N;i<N;i++)							\
     val+=read_imagef(vol,sampler,start+i*2*delta);			\
-  write_imagef(rgba,(int2)(x,y),val.xxxx/10);				\
+  write_imagef(rgba,(int2)(x,y),val.xxxx/3);				\
 }";
 
 void randomInit(float*a,int n)
