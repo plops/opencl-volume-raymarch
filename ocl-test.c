@@ -18,15 +18,14 @@ const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE|			\
                           CLK_FILTER_LINEAR;				\
 __kernel void red(int n, __write_only image2d_t rgba,                   \
                   __read_only image3d_t vol)				\
-{									\
-  int x=get_global_id(0),y=get_global_id(1);		\
-  float val = 0.0;\
-  int z=0;\
-  for(z=0;z<128;z++){\
-    float4 v=read_imagef(vol,sampler,(int4)(x,y,z,0));	\
-    val += v.x;\
- }						\
-write_imagef(rgba,(int2)(x,y),(float4)(val,val,val,1.0));					\
+{                                                                       \
+  int x=get_global_id(0), y=get_global_id(1);				\
+  float4 start=(float4)(x,y,0,0),delta=(float4)(0,0,1,0),val=0.0;	\
+  int z=0;								\
+  for(z=0;z<128;z++)							\
+    val+=read_imagef(vol,sampler,start+z*delta);			\
+  val /= 100;								\
+  write_imagef(rgba,(int2)(x,y),val.xxxx);				\
 }";
 
 /*
