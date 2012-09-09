@@ -7,12 +7,13 @@
 #include <unistd.h>
 
 const char *source = 
-  "  __kernel void\
-  red(int n, __write_only image2d_t rgba)\
-{\
-  int x=get_global_id(0),y=get_global_id(1);\
-  int2 coords = (int2)(x,y);\
-  write_imagef(rgba,coords,(float4)(sin((x+7*n)/23.0),sin(y/11.0f+n/3.),1.0f,1.0f));\
+  "  __kernel void \ 
+  red(int n, __write_only image2d_t rgba)				\
+{									\
+  int x=get_global_id(0),y=get_global_id(1);				\
+  int2 coords = (int2)(x,y);						\
+  float v = .5*(sin((x+n+y)/100.0f)+1);			\
+  write_imagef(rgba,coords,(float4)(.4*(sin((x+7*n)/23.0)+1)*.5*(sin(y/11.0f+n/3.)+1),v,v,1.0f)); \
 }";
 
 void randomInit(float*a,int n)
@@ -40,10 +41,11 @@ int main()
 
   if(!glfwInit())
     exit(EXIT_FAILURE);
-  int width=512,height=512;
+  int width=1366,height=768;
   
   if(!glfwOpenWindow(width,height,8,8,8,
 		     0,0,0,
+		     //GLFW_FULLSCREEN
 		     GLFW_WINDOW
 		     )){
     glfwTerminate();
@@ -51,6 +53,7 @@ int main()
   }
   
   glfwSetWindowTitle("bla");
+
   //glfwSetWindowPos(-8,-31);
   glfwSwapInterval(1);
   glfwSetKeyCallback(keyhandler);
@@ -104,7 +107,7 @@ int main()
   }
   cl_kernel k=clCreateKernel(prog,"red",0);
   
-  enum {BLOCK_SIZE=512, BLOCKS=512, DIMS=BLOCK_SIZE*BLOCKS};
+  enum {BLOCK_SIZE=1366, BLOCKS=768, DIMS=BLOCK_SIZE*BLOCKS};
   
   /* float pa[DIMS], pb[DIMS], pc[DIMS]; */
   
@@ -124,14 +127,14 @@ int main()
   /* clSetKernelArg(k,2,sizeof(cl_mem),&dc); */
 
   unsigned int tex;
-  float tex_buf[512*512*4];
+  float *tex_buf = malloc(1366*768*4*sizeof(float));
   { int i,j;
-    for(i=0;i<512;i++)
-      for(j=0;j<512;j++){
-	tex_buf[(i+512*j)*4+0]=1.0;
-	tex_buf[(i+512*j)*4+1]=0.0;
-	tex_buf[(i+512*j)*4+2]=.5;
-	tex_buf[(i+512*j)*4+0]=0.0;
+    for(i=0;i<1366;i++)
+      for(j=0;j<768;j++){
+	tex_buf[(i+1366*j)*4+0]=1.0;
+	tex_buf[(i+1366*j)*4+1]=0.0;
+	tex_buf[(i+1366*j)*4+2]=.5;
+	tex_buf[(i+1366*j)*4+0]=0.0;
       }
   }
   glGenTextures(1,&tex);
@@ -140,25 +143,28 @@ int main()
   glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
   glEnable(GL_TEXTURE_2D);
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,
-	       512,512,0,GL_RGBA,GL_FLOAT,tex_buf);
+	       1366,768,0,GL_RGBA,GL_FLOAT,tex_buf);
+
+  cl_int err;
+  cl_mem img=
+    clCreateFromGLTexture2D(ctx      /* context */,
+			    CL_MEM_WRITE_ONLY    /* flags */,
+			    GL_TEXTURE_2D       /* target */,
+			    0        /* miplevel */,
+			    tex       /* texture */,
+			    &err        /* errcode_ret */);
+  if(err!=CL_SUCCESS)
+    printf("create-from-gl-tex %d\n",err);
+  // -30 = invalid value
+  // -34 invalid context
+     
+
   int rot=1;
   while(running){
-    glClear(GL_COLOR_BUFFER_BIT);
+    
 
 
-    { cl_int err;
-      cl_mem img=
-	clCreateFromGLTexture2D(ctx      /* context */,
-				CL_MEM_WRITE_ONLY    /* flags */,
-				GL_TEXTURE_2D       /* target */,
-				0        /* miplevel */,
-				tex       /* texture */,
-				&err        /* errcode_ret */);
-      if(err!=CL_SUCCESS)
-	printf("create-from-gl-tex %d\n",err);
-      // -30 = invalid value
-      // -34 invalid context
-     
+    { 
       glFinish(); // ensure memory is up-to-date, glFlush might be faster
       
       err = clEnqueueAcquireGLObjects(q,1,&img,0,0,0);
@@ -174,7 +180,7 @@ int main()
 	  printf("error set kernel arg\n"); 
 	if(CL_SUCCESS!=clSetKernelArg(k,1,sizeof(cl_mem),&img))
 	  printf("error set kernel arg\n"); 
-	const size_t d[]={512,512};
+	const size_t d[]={1366,768};
 	clEnqueueNDRangeKernel(q,k,sizeof(d)/sizeof(*d),0,
 			       d,0,0,0,0);
       }
@@ -185,12 +191,12 @@ int main()
 
       err = clFlush(q);
       
-
+      
       if(err!=CL_SUCCESS)
 	printf("flush %d\n",err);
       
     }
-    
+    glClear(GL_COLOR_BUFFER_BIT);
     
     glBegin(GL_TRIANGLE_FAN);
     { float a=-1.,b=1.;
@@ -201,7 +207,7 @@ int main()
     }
     glEnd();
 
-    usleep(1000000/60);
+    //usleep(1000000/60);
 
     glfwSwapBuffers();
   }
