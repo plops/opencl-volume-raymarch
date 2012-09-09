@@ -9,25 +9,39 @@
 #include <unistd.h>
 #include <sys/time.h>
 
+#define len(x) ((sizeof((x))/sizeof((x)[0])))
+
 const char *source = 
-  "  __kernel void \
-  red(int n, __write_only image2d_t rgba, __read_only image3d_t vol)	\
+  "\
+const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE|			\
+                          CLK_ADDRESS_CLAMP_TO_EDGE|			\
+                          CLK_FILTER_LINEAR;				\
+__kernel void red(int n, __write_only image2d_t rgba,                   \
+                  __read_only image3d_t vol)				\
 {									\
-  int x=get_global_id(0),y=get_global_id(1);				\
-  const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE|		\
-                            ADDRESS_CLAMP_TO_EDGE|			\
-                            CLK_FILTER_LINEAR;				\
-  int3 coords = (int3)(x,y,z);						\
-  read_imageui(vol,sampler,coords);					\
-  float xx=x/1360.-.5, yy=y/1360.-.5,r=sqrt(xx*xx+yy*yy);		\
-  float xx2=xx-.05,yy2=yy+.1,r2=sqrt(xx2*xx2+yy2*yy2);			\
-  float v = sin(931*r*r-.035*n);					\
-  float w = sin(631*r2*r2-.035*n);					\
-  float z=w*v;								\
-  z = (z<0)?-1:1;							\
-  float4 col = (z<0)? (float4)(-z,.2*-z,0,1.0f): (float4)(0,.2*z,z,1.0f); \
-  write_imagef(rgba,coords,col);					\
+  int x=get_global_id(0),y=get_global_id(1);		\
+  float val = 0.0;\
+  int z=0;\
+  for(z=0;z<128;z++){\
+    float4 v=read_imagef(vol,sampler,(int4)(x,y,z,0));	\
+    val += v.x;\
+ }						\
+write_imagef(rgba,(int2)(x,y),(float4)(val,val,val,1.0));					\
 }";
+
+/*
+read_imageui(vol,sampler,coords);				\
+
+
+float xx=x/1360.-.5, yy=y/1360.-.5,r=sqrt(xx*xx+yy*yy);		\
+float xx2=xx-.05,yy2=yy+.1,r2=sqrt(xx2*xx2+yy2*yy2);			\
+float v = sin(931*r*r-.035*n);					\
+float w = sin(631*r2*r2-.035*n);					\
+float z=w*v;								\
+z = (z<0)?-1:1;							\
+float4 col = (z<0)? (float4)(-z,.2*-z,0,1.0f): (float4)(0,.2*z,z,1.0f); \
+
+*/
 
 void randomInit(float*a,int n)
 {
@@ -123,23 +137,47 @@ int main()
   cl_kernel k=clCreateKernel(prog,"red",0);
   
   enum {BLOCK_SIZE=W, BLOCKS=H, DIMS=BLOCK_SIZE*BLOCKS};
-  
-  /* float pa[DIMS], pb[DIMS], pc[DIMS]; */
-  
-  /* randomInit(pa,DIMS); */
-  /* randomInit(pb,DIMS); */
 
-  /* cl_mem  */
-  /*   da=clCreateBuffer(ctx,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, */
-  /* 		      DIMS*sizeof(cl_float),pa,0), */
-  /*   db=clCreateBuffer(ctx,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, */
-  /* 		      DIMS*sizeof(cl_float),pb,0), */
-  /*   dc=clCreateBuffer(ctx,CL_MEM_READ_ONLY, */
-  /* 		      DIMS*sizeof(cl_float),0,0); */
 
-  /* clSetKernelArg(k,0,sizeof(cl_mem),&da); */
-  /* clSetKernelArg(k,1,sizeof(cl_mem),&db); */
-  /* clSetKernelArg(k,2,sizeof(cl_mem),&dc); */
+
+  cl_int err;
+
+  // allocate 3D texture (contains volume data)
+  
+  enum{VW=128,VH=VW,VD=VW};
+
+  unsigned int vtex;
+  float *vtex_buf = malloc(VW*VH*VD*sizeof(float));
+  { int i,j,k;
+    for(k=0;k<VD;k++)
+      for(j=0;j<VH;j++)
+	for(i=0;i<VW;i++){
+	  float 
+	    x=(1.*i)/VW-.5,
+	    y=(1.*j)/VH-.5,
+	    z=(1.*k)/VD-.5,
+	    r2=x*x+y*y+z*z;
+	  vtex_buf[i+VW*(j+VH*k)]=(r2<.4*.4)?1.0:0.0;
+	}
+  }
+  glGenTextures(1,&vtex);
+  glBindTexture(GL_TEXTURE_3D,vtex);
+  glTexParameteri(GL_TEXTURE_3D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_3D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  glEnable(GL_TEXTURE_3D);
+  glTexImage3D(GL_TEXTURE_3D,0,GL_LUMINANCE,
+	       VW,VH,VD,0,GL_LUMINANCE,GL_FLOAT,vtex_buf);
+
+  cl_mem vimg=
+    clCreateFromGLTexture3D(ctx      /* context */,
+			    CL_MEM_READ_ONLY    /* flags */,
+			    GL_TEXTURE_3D       /* target */,
+			    0        /* miplevel */,
+			    vtex       /* texture */,
+			    &err        /* errcode_ret */);
+  if(err!=CL_SUCCESS)
+    printf("create-from-gl-tex %d\n",err);
+  glDisable(GL_TEXTURE_3D);
 
 
   // allocate 2D texture (to display result)
@@ -162,42 +200,10 @@ int main()
   glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,
 	       W,H,0,GL_RGBA,GL_FLOAT,tex_buf);
 
-  cl_int err;
   cl_mem img=
     clCreateFromGLTexture2D(ctx      /* context */,
 			    CL_MEM_WRITE_ONLY    /* flags */,
 			    GL_TEXTURE_2D       /* target */,
-			    0        /* miplevel */,
-			    tex       /* texture */,
-			    &err        /* errcode_ret */);
-  if(err!=CL_SUCCESS)
-    printf("create-from-gl-tex %d\n",err);
-
-
-  // allocate 3D texture (contains volume data)
-  
-  enum{VW=128,VH=VW,VD=VW};
-
-  unsigned int vtex;
-  unsigned char *vtex_buf = malloc(VW*VH*VD);
-  { int i,j,k;
-    for(k=0;k<VD;k++)
-      for(j=0;j<VH;j++)
-	for(i=0;i<VW;i++)
-	  tex_buf[i+W*(j+VH*k)]=0;
-  }
-  glGenTextures(1,&vtex);
-  glBindTexture(GL_TEXTURE_3D,vtex);
-  glTexParameteri(GL_TEXTURE_3D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_3D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-  glEnable(GL_TEXTURE_3D);
-  glTexImage3D(GL_TEXTURE_3D,0,GL_LUMINANCE,
-	       VW,VH,VD,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,vtex_buf);
-
-  cl_mem vimg=
-    clCreateFromGLTexture3D(ctx      /* context */,
-			    CL_MEM_READ_ONLY    /* flags */,
-			    GL_TEXTURE_3D       /* target */,
 			    0        /* miplevel */,
 			    tex       /* texture */,
 			    &err        /* errcode_ret */);
@@ -242,7 +248,8 @@ int main()
     { 
       //glFinish(); // ensure memory is up-to-date, glFlush might be faster
       glFlush();
-      err = clEnqueueAcquireGLObjects(q,1,&img,0,0,0);
+      const cl_mem objs[]={img,vimg};
+      err = clEnqueueAcquireGLObjects(q,len(objs),objs,0,0,0);
       if(err!=CL_SUCCESS)
 	printf("acquire %d\n",err);
 
@@ -253,14 +260,16 @@ int main()
 	frame_count++;
 	if(CL_SUCCESS!=clSetKernelArg(k,0,sizeof(frame_count),&frame_count))
 	  printf("error set kernel arg\n"); 
-	if(CL_SUCCESS!=clSetKernelArg(k,1,sizeof(cl_mem),&img))
+	if(CL_SUCCESS!=clSetKernelArg(k,1,sizeof(img),&img))
 	  printf("error set kernel arg\n"); 
-	const size_t d[]={W,H};
-	clEnqueueNDRangeKernel(q,k,sizeof(d)/sizeof(*d),0,
+	if(CL_SUCCESS!=clSetKernelArg(k,2,sizeof(vimg),&vimg))
+	  printf("error set kernel arg\n"); 
+	const size_t d[]={VW,VH};
+	clEnqueueNDRangeKernel(q,k,len(d),0,
 			       d,0,0,0,0);
       }
 
-      err = clEnqueueReleaseGLObjects(q,1,&img,0,0,0);
+      err = clEnqueueReleaseGLObjects(q,len(objs),objs,0,0,0);
       if(err!=CL_SUCCESS)
 	printf("release %d\n",err);
 
@@ -288,14 +297,9 @@ int main()
   glDeleteTextures(1,&vtex);
   free(vtex_buf);
 
-  /* clEnqueueReadBuffer(q,dc,CL_TRUE,0, */
-  /* 		      DIMS*sizeof(cl_float),pc,0,0,0); */
 
   clReleaseKernel(k);
   clReleaseProgram(prog);
-  /* clReleaseMemObject(da); */
-  /* clReleaseMemObject(db); */
-  /* clReleaseMemObject(dc); */
   clReleaseCommandQueue(q);
   clReleaseContext(ctx);
 
