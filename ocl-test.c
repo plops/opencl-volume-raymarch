@@ -1,4 +1,4 @@
-// VolumetricMethodsInVisualEffects2010
+// VolumetricMethodsInVisualEffects2010 p.59 raymarching
 
 #include <CL/opencl.h>
 #include <CL/cl_gl.h>
@@ -10,19 +10,23 @@
 #include <sys/time.h>
 
 const char *source = 
-  "  __kernel void \ 
-  red(int n, __write_only image2d_t rgba)				\
+  "  __kernel void \
+  red(int n, __write_only image2d_t rgba, __read_only image3d_t vol)	\
 {									\
   int x=get_global_id(0),y=get_global_id(1);				\
-  int2 coords = (int2)(x,y);						\
+  const sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE|		\
+                            ADDRESS_CLAMP_TO_EDGE|			\
+                            CLK_FILTER_LINEAR;				\
+  int3 coords = (int3)(x,y,z);						\
+  read_imageui(vol,sampler,coords);					\
   float xx=x/1360.-.5, yy=y/1360.-.5,r=sqrt(xx*xx+yy*yy);		\
   float xx2=xx-.05,yy2=yy+.1,r2=sqrt(xx2*xx2+yy2*yy2);			\
-  float v = sin(931*r*r-.035*n);						\
+  float v = sin(931*r*r-.035*n);					\
   float w = sin(631*r2*r2-.035*n);					\
   float z=w*v;								\
-  z = (z<0)?-1:1;\
-  float4 col = (z<0)? (float4)(-z,.2*-z,0,1.0f): (float4)(0,.2*z,z,1.0f);	\
-  write_imagef(rgba,coords,col);	\
+  z = (z<0)?-1:1;							\
+  float4 col = (z<0)? (float4)(-z,.2*-z,0,1.0f): (float4)(0,.2*z,z,1.0f); \
+  write_imagef(rgba,coords,col);					\
 }";
 
 void randomInit(float*a,int n)
@@ -137,6 +141,8 @@ int main()
   /* clSetKernelArg(k,1,sizeof(cl_mem),&db); */
   /* clSetKernelArg(k,2,sizeof(cl_mem),&dc); */
 
+
+  // allocate 2D texture (to display result)
   unsigned int tex;
   float *tex_buf = malloc(W*H*4*sizeof(float));
   { int i,j;
@@ -166,19 +172,43 @@ int main()
 			    &err        /* errcode_ret */);
   if(err!=CL_SUCCESS)
     printf("create-from-gl-tex %d\n",err);
-  // -30 = invalid value
-  // -34 invalid context
-     
 
-  int frame_count= 1;
 
-  struct timeval tv;    
-  suseconds_t old_usec=0;
-  time_t old_sec=0;
-
-  uint l=glGenLists(1);
-  glNewList(l,GL_COMPILE);
+  // allocate 3D texture (contains volume data)
   
+  enum{VW=128,VH=VW,VD=VW};
+
+  unsigned int vtex;
+  unsigned char *vtex_buf = malloc(VW*VH*VD);
+  { int i,j,k;
+    for(k=0;k<VD;k++)
+      for(j=0;j<VH;j++)
+	for(i=0;i<VW;i++)
+	  tex_buf[i+W*(j+VH*k)]=0;
+  }
+  glGenTextures(1,&vtex);
+  glBindTexture(GL_TEXTURE_3D,vtex);
+  glTexParameteri(GL_TEXTURE_3D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_3D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  glEnable(GL_TEXTURE_3D);
+  glTexImage3D(GL_TEXTURE_3D,0,GL_LUMINANCE,
+	       VW,VH,VD,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,vtex_buf);
+
+  cl_mem vimg=
+    clCreateFromGLTexture3D(ctx      /* context */,
+			    CL_MEM_READ_ONLY    /* flags */,
+			    GL_TEXTURE_3D       /* target */,
+			    0        /* miplevel */,
+			    tex       /* texture */,
+			    &err        /* errcode_ret */);
+  if(err!=CL_SUCCESS)
+    printf("create-from-gl-tex %d\n",err);
+
+
+
+  // prepare render commands for textured quad
+  uint l=glGenLists(1);
+  glNewList(l,GL_COMPILE);  
   glBegin(GL_TRIANGLE_FAN);
   { float a=-1.,b=1.;
     glTexCoord2f(0,0);    glVertex2f(a,a);
@@ -188,6 +218,16 @@ int main()
   }
   glEnd();
   glEndList();
+
+
+     
+
+  int frame_count= 1;
+
+  struct timeval tv;    
+  suseconds_t old_usec=0;
+  time_t old_sec=0;
+
   
   while(running){
     
@@ -243,7 +283,10 @@ int main()
   }
 
   glDeleteTextures(1,&tex);
+  free(tex_buf);
 
+  glDeleteTextures(1,&vtex);
+  free(vtex_buf);
 
   /* clEnqueueReadBuffer(q,dc,CL_TRUE,0, */
   /* 		      DIMS*sizeof(cl_float),pc,0,0,0); */
