@@ -7,12 +7,11 @@
 
 const char *source = 
   "  __kernel void\
-  vectorAdd(__global const float *a,\
-	    __global const float *b,\
-	    __global float *c)\
+  red(__write_only image2d_t rgba)\
 {\
-  int i=get_global_id(0);\
-  c[i]=a[i]+b[i];\
+  int x=get_global_id(0),y=get_global_id(1);\
+  int2 coords = (int2)(x,y);\
+  write_imagef(rgba,coords,(float4)(1.0f,1.0f,1.0f,1.0f));\
 }";
 
 void randomInit(float*a,int n)
@@ -97,51 +96,59 @@ int main()
   
   cl_command_queue q=clCreateCommandQueue(ctx,d,0,NULL);
   cl_program prog=clCreateProgramWithSource(ctx,1,&source,0,0);
-  clBuildProgram(prog,0,0,0,0,0);
+  {
+    int err=clBuildProgram(prog,0,0,0,0,0);
+    if(err!=CL_SUCCESS)
+      printf("can't build kernel: %d\n",err);
+  }
+  cl_kernel k=clCreateKernel(prog,"red",0);
   
-  cl_kernel k=clCreateKernel(prog,"vectorAdd",0);
+  enum {BLOCK_SIZE=512, BLOCKS=512, DIMS=BLOCK_SIZE*BLOCKS};
   
-  enum {BLOCK_SIZE=98, BLOCKS=3, DIMS=BLOCK_SIZE*BLOCKS};
+  /* float pa[DIMS], pb[DIMS], pc[DIMS]; */
   
-  float pa[DIMS], pb[DIMS], pc[DIMS];
-  
-  randomInit(pa,DIMS);
-  randomInit(pb,DIMS);
+  /* randomInit(pa,DIMS); */
+  /* randomInit(pb,DIMS); */
 
-  cl_mem 
-    da=clCreateBuffer(ctx,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,
-		      DIMS*sizeof(cl_float),pa,0),
-    db=clCreateBuffer(ctx,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,
-		      DIMS*sizeof(cl_float),pb,0),
-    dc=clCreateBuffer(ctx,CL_MEM_READ_ONLY,
-		      DIMS*sizeof(cl_float),0,0);
+  /* cl_mem  */
+  /*   da=clCreateBuffer(ctx,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, */
+  /* 		      DIMS*sizeof(cl_float),pa,0), */
+  /*   db=clCreateBuffer(ctx,CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, */
+  /* 		      DIMS*sizeof(cl_float),pb,0), */
+  /*   dc=clCreateBuffer(ctx,CL_MEM_READ_ONLY, */
+  /* 		      DIMS*sizeof(cl_float),0,0); */
 
-  clSetKernelArg(k,0,sizeof(cl_mem),&da);
-  clSetKernelArg(k,1,sizeof(cl_mem),&db);
-  clSetKernelArg(k,2,sizeof(cl_mem),&dc);
+  /* clSetKernelArg(k,0,sizeof(cl_mem),&da); */
+  /* clSetKernelArg(k,1,sizeof(cl_mem),&db); */
+  /* clSetKernelArg(k,2,sizeof(cl_mem),&dc); */
 
+  unsigned int tex;
+  float tex_buf[512*512*4];
+  { int i,j;
+    for(i=0;i<512;i++)
+      for(j=0;j<512;j++){
+	tex_buf[(i+512*j)*4+0]=1.0;
+	tex_buf[(i+512*j)*4+1]=0.0;
+	tex_buf[(i+512*j)*4+2]=.5;
+	tex_buf[(i+512*j)*4+0]=0.0;
+      }
+  }
+  glGenTextures(1,&tex);
+  glBindTexture(GL_TEXTURE_2D,tex);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+  glEnable(GL_TEXTURE_2D);
+  glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,
+	       512,512,0,GL_RGBA,GL_FLOAT,tex_buf);
+  
   while(running){
     glClear(GL_COLOR_BUFFER_BIT);
 
-    unsigned int tex;
-    unsigned char tex_buf[512*512];
-    glGenTextures(1,&tex);
-    glBindTexture(GL_TEXTURE_2D,tex);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-    glEnable(GL_TEXTURE_2D);
 
-
-    glTexImage2D(GL_TEXTURE_2D,0,GL_LUMINANCE,
-		 512,512,0,
-		 GL_LUMINANCE,
-		 GL_UNSIGNED_BYTE,
-		 tex_buf);
-    glBindTexture(GL_TEXTURE_2D,tex);
     { cl_int err;
       cl_mem img=
 	clCreateFromGLTexture2D(ctx      /* context */,
-				CL_MEM_READ_WRITE    /* flags */,
+				CL_MEM_WRITE_ONLY    /* flags */,
 				GL_TEXTURE_2D       /* target */,
 				0        /* miplevel */,
 				tex       /* texture */,
@@ -157,17 +164,23 @@ int main()
       if(err!=CL_SUCCESS)
 	printf("acquire %d\n",err);
 
+      
+      
+      { // call cl kernel here 
+	if(CL_SUCCESS!=clSetKernelArg(k,0,sizeof(cl_mem),&img))
+	  printf("error set kernel arg\n"); 
+	const size_t d[]={512,512};
+	clEnqueueNDRangeKernel(q,k,sizeof(d)/sizeof(*d),0,
+			       d,0,0,0,0);
+      }
+
       err = clEnqueueReleaseGLObjects(q,1,&img,0,0,0);
       if(err!=CL_SUCCESS)
 	printf("release %d\n",err);
 
-      
-      {
-	size_t d=DIMS;
-	clEnqueueNDRangeKernel(q,k,1,0,&d,0,0,0,0);
-      }
-
       err = clFlush(q);
+      
+
       if(err!=CL_SUCCESS)
 	printf("flush %d\n",err);
       
@@ -175,25 +188,29 @@ int main()
     
     
     glBegin(GL_TRIANGLE_FAN);
-    glTexCoord2f(0,0);    glVertex2f(-1,-1);
-    glTexCoord2f(0,1);    glVertex2f(-1,1);
-    glTexCoord2f(1,1);    glVertex2f(1,1);
-    glTexCoord2f(1,0);    glVertex2f(1,-1);
+    { float a=-.8,b=.8;
+      glTexCoord2f(0,0);    glVertex2f(a,a);
+      glTexCoord2f(0,1);    glVertex2f(a,b);
+      glTexCoord2f(1,1);    glVertex2f(b,b);
+      glTexCoord2f(1,0);    glVertex2f(b,a);
+    }
     glEnd();
 
-    glDeleteTextures(1,&tex);
 
     glfwSwapBuffers();
   }
 
-  clEnqueueReadBuffer(q,dc,CL_TRUE,0,
-		      DIMS*sizeof(cl_float),pc,0,0,0);
+  glDeleteTextures(1,&tex);
+
+
+  /* clEnqueueReadBuffer(q,dc,CL_TRUE,0, */
+  /* 		      DIMS*sizeof(cl_float),pc,0,0,0); */
 
   clReleaseKernel(k);
   clReleaseProgram(prog);
-  clReleaseMemObject(da);
-  clReleaseMemObject(db);
-  clReleaseMemObject(dc);
+  /* clReleaseMemObject(da); */
+  /* clReleaseMemObject(db); */
+  /* clReleaseMemObject(dc); */
   clReleaseCommandQueue(q);
   clReleaseContext(ctx);
 
